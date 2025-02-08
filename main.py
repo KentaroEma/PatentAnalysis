@@ -23,32 +23,18 @@ st.set_page_config(
 # PillowのDecompressionBombErrorのチェックを無効にする
 Image.MAX_IMAGE_PIXELS = None
 
-# @st.cache_data
-# def open_image(file):
-#     img = Image.open(file).convert("RGB")
-#     return np.array(img)
-
-# if not check_password():
-#     st.stop()  # Do not continue if check_password is not True.
-
 
 # ページ選択メニューをサイドバーに表示
 st.sidebar.title("Navigation window")
 
 pi = 3.14159265359
-page_list = ["Home", "Patent", "Others"]
-wafer_size_list = ["2 inch", "4 inch, 100 mm", "6 inch, 150 mm"]
-plot_type_list = ["Line", "Histgram", "Scatter", "Contour", "3D"]
-xrd_type_list = ["XRD 2θ-ω", "ω-Rocking Curve", "Others"]
-om_type_list = ["Image Viewer", "Object Detection", "Others"]
-lm_type_list = ["Defect Mapping", "Defect Image", "Others"]
+page_list = ["Home", "Patent", "Claim", "Others"]
+analysis_list = ["Overview", "Aplicant", "Others"]
 margin = 1.1
 OF = -0.93
 cms = plt.cm.datad.keys()
 
 page = st.sidebar.selectbox("Select measurements for analysis.", page_list)
-wafer_size = st.sidebar.selectbox("Select wafer size", wafer_size_list)
-r = {"2 inch": 25.0, "4 inch, 100 mm": 50.0, "6 inch, 150 mm": 75.0}.get(wafer_size, 25.0)
 
 # 各ページの内容
 # Home
@@ -62,10 +48,40 @@ elif page==page_list[1]:
     st.title(page_list[1])
     target_col = 'Patent'
     file_thick = st.file_uploader("Upload a CSV file", type='csv')
-    df = pd.read_csv(file_thick, encoding='utf-8', encoding_errors='ignore') if file_thick is not None else pd.DataFrame()
-    st.write(df)
+    if file_thick is not None:
+        df = pd.read_csv(file_thick, encoding='utf-8', encoding_errors='ignore')
+        target_date_col = st.sidebar.selectbox("Select date column", df.columns.to_list(), index=2)
+        df[target_date_col] = pd.to_datetime(df[target_date_col])
 
-# Others
+        # pandas.Timestamp → datetime.date に変換
+        min_date = df[target_date_col].min().date()
+        max_date = df[target_date_col].max().date()
+
+        # カレンダー入力
+        start_date, end_date = st.sidebar.date_input(
+        "Select date range",
+        [min_date, max_date],  # デフォルト値（最小日付～最大日付）
+        min_value=min_date,
+        max_value=max_date
+        )
+        
+        # min_date = st.sidebar.date_input("Min date", min_date)
+        # max_date = st.sidebar.date_input("Max date", max_date)
+
+        df_date = df[(df[target_date_col]>=start_date)&(df[target_date_col]<=end_date)]
+        # df_date = df[(df[target_date_col]>=range_date[0])&(df[target_date_col]<=range_date[1])]
+
+        st.write(df_date)
+    
+
+# Claim
 elif page==page_list[2]:
     st.title(page_list[2])
+    target_col = 'Claim'
+    file_thick = st.file_uploader("Upload a PDF file", type='pdf')
+
+
+# Others
+elif page==page_list[3]:
+    st.title(page_list[3])
     st.write("This is a page for other analysis.")
