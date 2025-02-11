@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objs as go
+from pdfminer.high_level import extract_text
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from datetime import datetime, timedelta
 from auth import check_password
@@ -36,6 +37,18 @@ cms = plt.cm.datad.keys()
 
 page = st.sidebar.selectbox("Select measurements for analysis.", page_list)
 
+# 📌 無限に色を生成する関数（HSLを使って自動生成）
+def generate_color(index):
+    hue = (index * 137.508) % 360  # 黄金比を使って色相を均等に分布
+    return f"hsl({hue}, 75%, 75%)"
+
+# 📌 テキストをHTML形式でハイライトする関数
+def highlight_text(text, terms):
+    for i, term in enumerate(terms):
+        color = generate_color(i)  # 動的に色を決定
+        text = re.sub(f"({re.escape(term)})", rf'<mark style="background-color: {color}">\1</mark>', text, flags=re.IGNORECASE)
+    return text
+
 # 各ページの内容
 # Home
 if page==page_list[0]:
@@ -47,15 +60,18 @@ if page==page_list[0]:
 elif page==page_list[1]:
     st.title(page_list[1])
     target_col = 'Patent'
-    file_thick = st.file_uploader("Upload a CSV file", type='csv')
-    if file_thick is not None:
-        df = pd.read_csv(file_thick, encoding='utf-8', encoding_errors='ignore')
+    file_summaries = st.file_uploader("Upload CSV files", type='csv', accept_multiple_files=True)
+    if len(file_summaries)>0:
+        df_list = []
+        for file_summary in file_summaries:
+            df_summary = pd.read_csv(file_summary, encoding='utf-8', encoding_errors='ignore')
+            df_list.append(df_summary)
+        df = pd.concat(df_list).reset_index(drop=True)
+        df = df.drop_duplicates(subset=['文献番号','出願日'], keep='first').reset_index(drop=True)
         target_date_col = st.sidebar.selectbox("Select date column", df.columns.to_list(), index=2)
         df[target_date_col] = pd.to_datetime(df[target_date_col])
         df['年'] = df[target_date_col].dt.year.astype('int')
         df['出願人/権利者'] = df['出願人/権利者'].astype('str')
-
-        # st.write(df['出願人/権利者'].unique())
 
         applicant_list =[]
         for applicants in df['出願人/権利者'].unique():
@@ -91,19 +107,7 @@ elif page==page_list[1]:
             for year in range(min_year,max_year):
                 df_year.loc[df_year['年']==year, f'count_{stage}'] = df_date[(df_date['年']==year)&(df_date['ステージ']==stage)]['文献番号'].count()
 
-        # df_applicant = pd.DataFrame(applicant_list, columns=['出願人/権利者'])
-        # df_applicant['件数'] = 0
-
-        # bar_applicant = st.progress(0, text='Now progress...')
-
         with st.spinner('Loading...'):
-            # for i, applicant in enumerate(applicant_list):
-            #     df_applicant.loc[df_applicant['出願人/権利者']==applicant, '件数'] = df_date[df_date['出願人/権利者'].str.contains(applicant)]['文献番号'].count()
-            #     for stage in df_date['ステージ'].unique():
-            #         df_applicant.loc[df_applicant['出願人/権利者']==applicant, f'ステージ_{stage}'] = df_date[(df_date['出願人/権利者'].str.contains(applicant))&(df_date['ステージ']==stage)]['文献番号'].count()
-            #     for year in range(min_year,max_year):
-            #         df_applicant.loc[df_applicant['出願人/権利者']==applicant, str(year)+'年'] = df_date[(df_date['出願人/権利者'].str.contains(applicant))&(df_date['年']==year)]['文献番号'].count()
-            #     bar_applicant.progress(i/len(applicant_list), text=f'Now progress...{i}/{len(applicant_list)}')
             # 出願人ごとの件数を計算
             df_applicant_initial = df_date.copy()
             df_applicant_initial['出願人/権利者'] = df_applicant_initial['出願人/権利者'].str.split('[、，,]')  # 出願人名を分割
@@ -125,11 +129,7 @@ elif page==page_list[1]:
             # 出願人の件数順にソート
             df_applicant.sort_values('件数', ascending=False, inplace=True)
 
-        # データの表示
-        # st.write(df_applicant)
         applicant = st.sidebar.selectbox("Select applicant", df_applicant['出願人/権利者'].unique(), index=0)
-
-        # bar_applicant.empty()
 
         tab_overview, tab_applicant, tab_others = st.tabs(analysis_list)
 
@@ -162,41 +162,40 @@ elif page==page_list[1]:
             # データの表示
             st.write(df_applicant)
 
+            num_applicant = st.slider("Number of applicants", 1, len(df_applicant), 50)
+
             # データの可視化
             st.header("Visualization")
             with st.spinner('Visualizing...'):
                 fig2 = go.Figure()
-                fig2.add_trace(
-                    go.Bar(
-                        x=df_applicant['件数'].values[:50], 
-                        y=df_applicant['出願人/権利者'].values[:50], 
-                        name='Patents per Applicant', 
-                        orientation='h'
-                        ))
+                # ステージごとのデータがある場合、各ステージを積み上げ棒グラフにする
+                for stage in df_applicant.columns:
+                    if stage.startswith("ステージ_"):  # ステージ関連のカラムのみを対象
+                        fig2.add_trace(go.Bar(
+                            x=df_applicant[stage].values[:num_applicant],
+                            y=df_applicant['出願人/権利者'].values[:num_applicant],
+                            name=stage.replace("ステージ_", ""),  # ラベルをシンプルに
+                            orientation='h'
+                            ))
                 fig2.update_layout(
                     title='Patents per Applicant',
                     height=1200,
                     width=900,
                     xaxis_title='Counts',
                     yaxis_title='Applicants',
-                    yaxis=dict(autorange="reversed")  # 件数が多い順に上から表示
+                    yaxis=dict(autorange="reversed"),  # 件数が多い順に上から表示
+                    barmode='stack'  # 積み上げ棒グラフ
                     )
                 st.plotly_chart(fig2)
-            
-            # st.write(df_year_grouped)
-            # st.write(df_year_grouped[df_year_grouped['出願人/権利者'].str.contains(applicant)].T)
-            # st.write(len(df_year_grouped.columns.to_list()[1:]))
-            # st.write(len(df_year_grouped[df_year_grouped['出願人/権利者'].str.contains(applicant)].T.iloc[:,0].to_list()[1:]))
 
             with st.spinner("Visualizing..."):
                 fig3 = go.Figure()
-                fig3.add_trace(
-                    go.Scatter(
-                        x=df_year_grouped.columns.to_list()[1:], 
-                        y=df_year_grouped[df_year_grouped['出願人/権利者'].str.contains(applicant)].T.iloc[:,0].to_list()[1:],
-                        mode='lines+markers',
-                        name='Patents per Stage'
-                        ))
+                fig3.add_trace(go.Scatter(
+                    x=df_year_grouped.columns.to_list()[1:], 
+                    y=df_year_grouped[df_year_grouped['出願人/権利者'].str.contains(applicant)].T.iloc[:,0].to_list()[1:],
+                    mode='lines+markers',
+                    name='Patents per Stage'
+                    ))
                 fig3.update_layout(
                     title=f'Patents per Applicant ({applicant})',
                     xaxis_title='Year',
@@ -214,7 +213,57 @@ elif page==page_list[1]:
 elif page==page_list[2]:
     st.title(page_list[2])
     target_col = 'Claim'
-    file_thick = st.file_uploader("Upload a PDF file", type='pdf')
+    file_pdfs = st.file_uploader("Upload a PDF file", type='pdf', accept_multiple_files=True)
+
+    # サイドバーに検索ボックスを追加（カンマ区切りで複数入力）
+    search_query = st.sidebar.text_input("Enter keywords (comma separated)", "")
+    # 検索ワードをリストに変換（カンマで分割して前後の空白を削除）
+    search_terms = [term.strip() for term in search_query.split(',') if term.strip()]
+
+    if len(file_pdfs)>0:
+        with st.spinner('Loading...'):
+            for file_pdf in file_pdfs:
+                text = extract_text(file_pdf)
+                text = text.replace(' ','')
+                st.header(file_pdf.name)
+                try:
+                    subject = text.split('【課題】')[1].split('【解決手段】')[0]
+                    subject = subject.replace('\n','')
+                    subject = subject.replace('\u3000','')
+                    subject = highlight_text(subject, search_terms)  # 🔍 ハイライト処理
+                    st.markdown(f'**【課題】**<br>{subject}', unsafe_allow_html=True)
+                    # st.write('【課題】'+subject)
+                except:
+                    pass
+                try:
+                    solution = text.split('【解決手段】')[1].split('【選択図】')[0]
+                    solution = solution.replace('\n','')
+                    solution = solution.replace('\u3000','')
+                    solution = highlight_text(solution, search_terms)  # 🔍 ハイライト処理
+                    st.markdown(f'**【解決手段】**<br>{solution}', unsafe_allow_html=True)
+                    # st.write('【解決手段】'+solution)
+                except:
+                    pass
+                try:
+                    figure = text.split('【選択図】')[1].split('【特許請求の範囲】')[0]
+                    figure = figure.replace('\n','')
+                    figure = figure.replace('\u3000','')
+                    st.write('【選択図】'+figure)
+                except:
+                    pass
+                try:
+                    claims = text.split('【特許請求の範囲】')[1].split('【発明の詳細な説明】')[0]
+                    claims = claims.replace('\n','')
+                    claims = claims.replace('\u3000','')
+                    claims_list = claims.split('【請求項')
+                    for claim in claims_list:
+                        if claim != '': 
+                            claim_text = highlight_text('【請求項' + claim, search_terms)  # 🔍 ハイライト処理
+                            st.markdown(claim_text, unsafe_allow_html=True)
+                            # st.write('【請求項'+claim)
+                except:
+                    pass
+
 
 
 # Others
