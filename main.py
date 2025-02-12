@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import io  # ← `BytesIO` を使うために追加
 import re
 import numpy as np
 import pandas as pd
@@ -9,6 +10,8 @@ import plotly.graph_objs as go
 from pdfminer.high_level import extract_text
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from datetime import datetime, timedelta
+import time
+import hashlib
 from auth import check_password
 
 
@@ -36,6 +39,15 @@ OF = -0.93
 cms = plt.cm.datad.keys()
 
 page = st.sidebar.selectbox("Select measurements for analysis.", page_list)
+
+# 📌 PDF のテキスト抽出をキャッシュする関数
+@st.cache_data
+def extract_text_from_pdf(file_bytes):
+    """PDF のバイナリデータからテキストを抽出し、キャッシュする"""
+    file_hash = hashlib.md5(file_bytes).hexdigest()  # ファイルのハッシュ値を取得
+    with io.BytesIO(file_bytes) as pdf_file:  # `BytesIO` を使ってファイルオブジェクト化
+        extracted_text = extract_text(pdf_file).replace(' ', '').replace('\n', '').replace('\u3000', '')
+    return extracted_text, file_hash
 
 # 📌 無限に色を生成する関数（HSLを使って自動生成）
 def generate_color(index):
@@ -213,7 +225,27 @@ elif page==page_list[1]:
 elif page==page_list[2]:
     st.title(page_list[2])
     target_col = 'Claim'
-    file_pdfs = st.file_uploader("Upload a PDF file", type='pdf', accept_multiple_files=True)
+    file_pdfs = st.file_uploader("Upload PDF files", type='pdf', accept_multiple_files=True)
+
+    total_files = len(file_pdfs)  # 全ファイル数
+
+    pdf_name_list = []
+    pdf_text_dict = {}  # ハッシュキーでキャッシュ管理する辞書
+
+    if len(file_pdfs)>0:
+        extract_bar = st.progress(0)  # プログレスバーの追加
+        with st.spinner('Loading...'):
+            for i, file_pdf in enumerate(file_pdfs):
+                # 📌 ファイルのバイナリデータを取得し、キャッシュをチェック
+                file_bytes = file_pdf.read()
+                extracted_text, file_hash = extract_text_from_pdf(file_bytes)
+                pdf_name_list.append(file_pdf.name)
+                pdf_text_dict[file_hash] = extracted_text  # ハッシュキーで保存
+
+                extract_bar.progress((i+1)/total_files, f"Extracting {i+1}/{total_files}")
+                time.sleep(0.2)
+
+        extract_bar.empty()  # すべての処理が完了したらプログレスバーを消す
 
     # サイドバーに検索ボックスを追加（カンマ区切りで複数入力）
     search_query = st.sidebar.text_input("Enter keywords (comma separated)", "")
@@ -221,11 +253,12 @@ elif page==page_list[2]:
     search_terms = [term.strip() for term in search_query.split(',') if term.strip()]
 
     if len(file_pdfs)>0:
+        display_bar = st.progress(0)  # プログレスバーの追加
+        st.write("Search terms: ", search_terms)
         with st.spinner('Loading...'):
-            for file_pdf in file_pdfs:
-                text = extract_text(file_pdf)
+            for i, (name, text) in enumerate(zip(pdf_name_list, pdf_text_dict.values())):
                 text = text.replace(' ','')
-                st.header(file_pdf.name)
+                st.header(f"{i+1}/{total_files}: {name}")  # ファイル名の表示
                 try:
                     subject = text.split('【課題】')[1].split('【解決手段】')[0]
                     subject = subject.replace('\n','')
@@ -264,6 +297,14 @@ elif page==page_list[2]:
                 except:
                     pass
 
+                # 📌 プログレスバーを更新
+                display_bar.progress((i+1)/total_files, f"Processing {i+1}/{total_files}")
+                # 📌 少し待機（見やすくするため）
+                time.sleep(0.2)
+
+        display_bar.empty()  # すべての処理が完了したらプログレスバーを消す
+
+        st.header("EOF")
 
 
 # Others
