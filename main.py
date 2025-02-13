@@ -5,8 +5,8 @@ import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import plotly.express as px
 import plotly.graph_objs as go
+from sklearn.cluster import KMeans
 from pdfminer.high_level import extract_text
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from datetime import datetime, timedelta
@@ -33,12 +33,51 @@ st.sidebar.title("Navigation window")
 
 pi = 3.14159265359
 page_list = ["Home", "Patent", "Claim", "Others"]
-analysis_list = ["Overview", "Applicant", "Others"]
+analysis_list = ["Overview", "Applicant", "FI", "Summary"]
 margin = 1.1
 OF = -0.93
 cms = plt.cm.datad.keys()
 
 page = st.sidebar.selectbox("Select measurements for analysis.", page_list)
+
+# FI分類を整理し、数値のみのエントリを前のFIコードと結合
+def merge_fi_codes(fi_list):
+    merged_list = []
+    prev_fi = None
+
+    for fi in fi_list:
+        if fi.split('@')[0].isdigit() and prev_fi:  # 数字のみの場合、前のFIと結合
+            merged_list[-1] = f"{prev_fi}-{fi}"
+        else:
+            merged_list.append(fi)
+            prev_fi = fi  # 直前のFIコードを更新
+
+    return merged_list
+
+# FIコードをセクション、クラス、サブクラス、グループに分解する関数
+def parse_fi_codes(fi_list):
+    sections = set()
+    classes = set()
+    subclasses = set()
+    groups = set()
+
+    for fi in fi_list:
+        parts = fi.split("/")  # FIコードの"/"で分割
+        if len(parts) >= 2:
+            main_part = parts[0]  # 例: "H01L21"
+            section = main_part[0]  # 例: "H"
+            subclass = main_part[:4]  # 例: "H01L"
+
+            sections.add(section)
+            subclasses.add(subclass)
+
+            if len(main_part) >= 3:
+                class_code = main_part[:3]  # 例: "H01"
+                classes.add(class_code)
+
+            groups.add(fi.split('-')[0].split('@')[0])  # グループは元のFIコードそのまま
+
+    return list(sections), list(classes), list(subclasses), list(groups)
 
 # 📌 PDF のテキスト抽出をキャッシュする関数
 @st.cache_data
@@ -84,6 +123,9 @@ elif page==page_list[1]:
         df[target_date_col] = pd.to_datetime(df[target_date_col])
         df['年'] = df[target_date_col].dt.year.astype('int')
         df['出願人/権利者'] = df['出願人/権利者'].astype('str')
+        df['FI'] = df['FI'].astype('str').apply(lambda x: [fi for fi in x.split(',')])
+        df['FI'] = df['FI'].apply(merge_fi_codes)
+        df[['セクション', 'クラス', 'サブクラス', 'グループ']] = df['FI'].apply(lambda x: pd.Series(parse_fi_codes(x)))
 
         applicant_list =[]
         for applicants in df['出願人/権利者'].unique():
@@ -119,6 +161,9 @@ elif page==page_list[1]:
             for year in range(min_year,max_year):
                 df_year.loc[df_year['年']==year, f'count_{stage}'] = df_date[(df_date['年']==year)&(df_date['ステージ']==stage)]['文献番号'].count()
 
+        fi_selector = st.sidebar.multiselect("Select FI Section code", df['セクション'].explode().unique(), default=df['セクション'].explode().unique(), key='fi_section_selector')
+        df_fi = df_date[df_date['セクション'].apply(lambda x: any(fi in x for fi in fi_selector))]
+
         with st.spinner('Loading...'):
             # 出願人ごとの件数を計算
             df_applicant_initial = df_date.copy()
@@ -140,10 +185,12 @@ elif page==page_list[1]:
             df_applicant = df_applicant.merge(df_year_grouped, on='出願人/権利者', how='left')
             # 出願人の件数順にソート
             df_applicant.sort_values('件数', ascending=False, inplace=True)
+        
+        
 
         applicant = st.sidebar.selectbox("Select applicant", df_applicant['出願人/権利者'].unique(), index=0)
 
-        tab_overview, tab_applicant, tab_others = st.tabs(analysis_list)
+        tab_overview, tab_applicant, tab_fi, tab_summary = st.tabs(analysis_list)
 
         with tab_overview:
             st.header(analysis_list[0])
@@ -160,9 +207,19 @@ elif page==page_list[1]:
             with st.spinner('Visualizing...'):
                 fig1 = go.Figure()
                 fig1.update_layout(title='Patents every year', xaxis_title='Year', yaxis_title='Counts')
-                fig1.add_trace(go.Scatter(x=df_year['年'].values, y=df_year['count'].values, mode='lines+markers', name='Counts every year (All)'))
+                fig1.add_trace(go.Scatter(
+                    x=df_year['年'].values, 
+                    y=df_year['count'].values, 
+                    mode='lines+markers', 
+                    name='Counts every year (All)'
+                    ))
                 for stage in stage_selector:
-                    fig1.add_trace(go.Scatter(x=df_year['年'].values, y=df_year[f'count_{stage}'].values, mode='lines+markers', name=f'Counts every year ({stage})'))
+                    fig1.add_trace(go.Scatter(
+                        x=df_year['年'].values, 
+                        y=df_year[f'count_{stage}'].values, 
+                        mode='lines+markers', 
+                        name=f'Counts every year ({stage})'
+                        ))
                 st.plotly_chart(fig1)
 
         with tab_applicant:
@@ -215,9 +272,50 @@ elif page==page_list[1]:
                     )
                 st.plotly_chart(fig3)
 
-        with tab_others:
+        with tab_fi:
             st.header(analysis_list[2])
-            st.write("Coming soon...")
+            st.write("This is a FI analysis page.")
+            fi_reference_url = 'https://www.j-platpat.inpit.go.jp/cache/classify/patent/PMGS_HTML/jpp/FI/ja/fiSection/fiSection.html'
+            st.write(f"Please refer to the following URL for the FI classification: [J-PlatPat:FIセクション/広域ファセット選択📌]({fi_reference_url})")
+
+            fig4 = go.Figure()
+            fig4.add_trace(go.Pie(
+                labels=df_fi['セクション'].explode().value_counts().index,
+                values=df_fi['セクション'].explode().value_counts().values,
+                rotation=0,
+                hole=0.3,
+                title='FI Section',
+                textinfo='label+percent',
+                ))
+            fig4.update_layout(
+                title='FI Section',
+                height=800,
+                width=800,
+                )
+            st.plotly_chart(fig4)
+
+            fig5 = go.Figure()
+            fig5.add_trace(go.Bar(
+                x=df_fi['クラス'].explode().value_counts().index,
+                y=df_fi['クラス'].explode().value_counts().values,
+                name='FI Class',
+                ))
+            fig5.update_layout(
+                title='FI Class',
+                height=600,
+                width=1200,
+                xaxis_title='FI Class',
+                yaxis_title='Counts',
+                )
+            st.plotly_chart(fig5)
+
+        with tab_summary:
+            st.header(analysis_list[3])
+            st.write("This is a summary analysis page.")
+            if '要約' not in df.columns.to_list():
+                st.write("There is no summary data in the uploaded file.")
+            else:
+                st.write(df_date[['文献番号','出願人/権利者','要約']])
 
 
 
