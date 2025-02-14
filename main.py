@@ -105,7 +105,12 @@ def highlight_text(text, terms):
 if page==page_list[0]:
     st.title(page_list[0])
     st.title("Patent Analysis App")
-    st.write("Welcome to the Patent Analysis Application. Please select an analysis type from the sidebar.")
+    st.write("Welcome to the Patent Analysis Application")
+    st.write("This application is for analyzing patent data.")
+    st.write("1. Find some patents from [J-PlatPat](https://www.j-platpat.inpit.go.jp/).")
+    st.write("2. Download the patent data as CSV files or PDF files.")
+    st.write("3. Select the analysis type from the sidebar.")
+    st.write("4. Upload the CSV files or PDF files.")
 
 # Patent
 elif page==page_list[1]:
@@ -355,50 +360,53 @@ elif page==page_list[2]:
         st.write("Search terms: ", search_terms)
         with st.spinner('Loading...'):
             for i, (name, text) in enumerate(zip(pdf_name_list, pdf_text_dict.values())):
-                text = text.replace(' ','')
-                st.header(f"{i+1}/{total_files}: {name}")  # ファイル名の表示
-                try:
-                    subject = text.split('【課題】')[1].split('【解決手段】')[0]
-                    subject = subject.replace('\n','')
-                    subject = subject.replace('\u3000','')
-                    subject = highlight_text(subject, search_terms)  # 🔍 ハイライト処理
-                    st.markdown(f'**【課題】**<br>{subject}', unsafe_allow_html=True)
-                    # st.write('【課題】'+subject)
-                except:
-                    pass
-                try:
-                    solution = text.split('【解決手段】')[1].split('【選択図】')[0]
-                    solution = solution.replace('\n','')
-                    solution = solution.replace('\u3000','')
-                    solution = highlight_text(solution, search_terms)  # 🔍 ハイライト処理
-                    st.markdown(f'**【解決手段】**<br>{solution}', unsafe_allow_html=True)
-                    # st.write('【解決手段】'+solution)
-                except:
-                    pass
-                try:
-                    figure = text.split('【選択図】')[1].split('【特許請求の範囲】')[0]
-                    figure = figure.replace('\n','')
-                    figure = figure.replace('\u3000','')
-                    st.write('【選択図】'+figure)
-                except:
-                    pass
-                try:
-                    claims = text.split('【特許請求の範囲】')[1].split('【発明の詳細な説明】')[0]
-                    claims = claims.replace('\n','')
-                    claims = claims.replace('\u3000','')
-                    claims_list = claims.split('【請求項')
-                    for claim in claims_list:
-                        if claim != '': 
-                            claim_text = highlight_text('【請求項' + claim, search_terms)  # 🔍 ハイライト処理
-                            st.markdown(claim_text, unsafe_allow_html=True)
-                            # st.write('【請求項'+claim)
-                except:
-                    pass
+                with st.expander(f"{i+1}/{total_files}: {name}", expanded=True):
+                    st.header(f"{i+1}/{total_files}: {name}")  # ファイル名の表示
+                    text = text.replace(' ','')
+                    
+                    try:
+                        subject = text.split('【課題】')[1].split('【解決手段】')[0]
+                        subject = subject.replace('\n','')
+                        subject = subject.replace('\u3000','')
+                        subject = highlight_text(subject, search_terms)  # 🔍 ハイライト処理
+                        st.markdown(f'**【課題】**<br>{subject}', unsafe_allow_html=True)
+                        # st.write('【課題】'+subject)
+                    except:
+                        pass
+                    try:
+                        solution = text.split('【解決手段】')[1].split('【選択図】')[0]
+                        solution = solution.replace('\n','')
+                        solution = solution.replace('\u3000','')
+                        solution = highlight_text(solution, search_terms)  # 🔍 ハイライト処理
+                        st.markdown(f'**【解決手段】**<br>{solution}', unsafe_allow_html=True)
+                        # st.write('【解決手段】'+solution)
+                    except:
+                        pass
+                    try:
+                        figure = text.split('【選択図】')[1].split('【特許請求の範囲】')[0]
+                        figure = figure.replace('\n','')
+                        figure = figure.replace('\u3000','')
+                        st.markdown(f'**【選択図】**<br>{figure}', unsafe_allow_html=True)
+                    except:
+                        pass
+                    try:
+                        claims = text.split('【特許請求の範囲】')[1].split('【発明の詳細な説明】')[0]
+                        claims = claims.replace('\n','')
+                        claims = claims.replace('\u3000','')
+                        claims_list = claims.split('【請求項')
+                        st.markdown(f'**【特許請求の範囲】**<br>', unsafe_allow_html=True)
+                        for claim in claims_list:
+                            if claim != '': 
+                                claim_text = highlight_text('【請求項' + claim, search_terms)  # 🔍 ハイライト処理
+                                st.markdown(claim_text, unsafe_allow_html=True)
+                                # st.write('【請求項'+claim)
+                    except:
+                        pass
 
-                # 📌 プログレスバーを更新
-                display_bar.progress((i+1)/total_files, f"Processing {i+1}/{total_files}")
-                # 📌 少し待機（見やすくするため）
-                time.sleep(0.2)
+                    # 📌 プログレスバーを更新
+                    display_bar.progress((i+1)/total_files, f"Processing {i+1}/{total_files}")
+                    # 📌 少し待機（見やすくするため）
+                    time.sleep(0.2)
 
         display_bar.empty()  # すべての処理が完了したらプログレスバーを消す
 
