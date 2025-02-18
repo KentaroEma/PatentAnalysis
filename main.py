@@ -31,9 +31,9 @@ Image.MAX_IMAGE_PIXELS = None
 # ページ選択メニューをサイドバーに表示
 st.sidebar.title("Navigation window")
 
-pi = 3.14159265359
 page_list = ["Home", "Patent", "Claim", "Others"]
 analysis_list = ["Overview", "Applicant", "FI", "Summary"]
+pi = 3.14159265359
 margin = 1.1
 OF = -0.93
 cms = plt.cm.datad.keys()
@@ -192,7 +192,6 @@ elif page==page_list[1]:
             df_applicant.sort_values('件数', ascending=False, inplace=True)
         
         
-
         applicant = st.sidebar.selectbox("Select applicant", df_applicant['出願人/権利者'].unique(), index=0)
 
         tab_overview, tab_applicant, tab_fi, tab_summary = st.tabs(analysis_list)
