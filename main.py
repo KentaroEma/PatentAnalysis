@@ -124,7 +124,7 @@ elif page==page_list[1]:
             df_list.append(df_summary)
         df = pd.concat(df_list).reset_index(drop=True)
         df = df.drop_duplicates(subset=['文献番号','出願日'], keep='first').reset_index(drop=True)
-        target_date_col = st.sidebar.selectbox("Select date column", df.columns.to_list(), index=2)
+        target_date_col = st.sidebar.selectbox("Select date column", [col for col in df.columns if col.endswith('日')])
         df[target_date_col] = pd.to_datetime(df[target_date_col])
         df['年'] = df[target_date_col].dt.year.astype('int')
         df['出願人/権利者'] = df['出願人/権利者'].astype('str')
@@ -204,7 +204,7 @@ elif page==page_list[1]:
             st.write("The data is as follows.")
 
             # データの表示
-            st.write(df_date)
+            st.dataframe(df_date)
 
             # データの可視化
             st.header("Visualization")
@@ -275,6 +275,51 @@ elif page==page_list[1]:
                     yaxis_title='Counts'
                     )
                 st.plotly_chart(fig3)
+
+            # 📌 出願人ごとの年次データを整形
+            df_applicant_melted = df_applicant[:num_applicant].melt(
+                id_vars=['出願人/権利者'],
+                value_vars=[col for col in df_applicant.columns if col.endswith('年')],
+                var_name='年',
+                value_name='出願件数'
+            )
+
+            # 年のカラムを整数型に変換
+            df_applicant_melted['年'] = df_applicant_melted['年'].str.replace('年', '').astype(int)
+
+            with st.spinner('Visualizing...'):
+                # 📌 バブルチャートの作成
+                fig_bubble = go.Figure()
+
+                # 出願人ごとにバブルを作成
+                for applicant in df_applicant_melted['出願人/権利者'].unique():
+                    df_subset = df_applicant_melted[df_applicant_melted['出願人/権利者'] == applicant]
+                    
+                    fig_bubble.add_trace(go.Scatter(
+                        x=df_subset['年'],
+                        y=[applicant] * len(df_subset),  # 出願人名をY軸に固定
+                        mode='markers',
+                        marker=dict(
+                            size=df_subset['出願件数'] * 2,  # 件数に応じてバブルサイズを変化
+                            opacity=0.6,  # バブルの透明度
+                            line=dict(width=1, color='black')  # バブルの枠線
+                        ),
+                        name=applicant  # 出願人のラベル
+                    ))
+
+                # 📌 グラフのレイアウト設定
+                fig_bubble.update_layout(
+                    title="Applicant-wise Annual Patent Applications (Bubble Chart)",
+                    xaxis_title="Year",
+                    yaxis_title="Applicants",
+                    yaxis=dict(autorange="reversed"),  # 出願件数が多い順に並べる
+                    showlegend=True,
+                    height=1600,
+                    width=1200
+                )
+
+                # 📌 Streamlit に表示
+                st.plotly_chart(fig_bubble)
 
         with tab_fi:
             st.header(analysis_list[2])
