@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import io  # ← `BytesIO` を使うために追加
+import io
 import re
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from datetime import datetime, timedelta
 import time
 import hashlib
-from auth import check_password
+# from auth import check_password
 
 
 
@@ -34,8 +34,6 @@ st.sidebar.title("Navigation window")
 page_list = ["Home", "Patent", "Claim", "Others"]
 analysis_list = ["Overview", "Applicant", "FI", "Summary"]
 pi = 3.14159265359
-margin = 1.1
-OF = -0.93
 cms = plt.cm.datad.keys()
 
 page = st.sidebar.selectbox("Select measurements for analysis.", page_list)
